@@ -201,6 +201,8 @@ if (ENABLE_VULKAN)
         $<$<NOT:$<BOOL:${ENABLE_LIBRETRO}>>:renderer_vulkan/vk_swapchain.h>
         renderer_vulkan/vk_texture_runtime.cpp
         renderer_vulkan/vk_texture_runtime.h
+        renderer_vulkan/vk_ubershader.cpp
+        renderer_vulkan/vk_ubershader.h
         shader/generator/spv_fs_shader_gen.cpp
         shader/generator/spv_fs_shader_gen.h
     )

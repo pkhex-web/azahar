@@ -1471,6 +1471,7 @@ bool ShaderDiskCache::InitPLCache(const std::atomic_bool& stop_loading,
                 &parent.pipeline_workers);
 
             it_pl.value()->TryBuild(false);
+            parent.ubershaders.Prewarm(info.state);
 
             LOG_DEBUG(Render_Vulkan, "    built.");
 

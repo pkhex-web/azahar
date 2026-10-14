@@ -84,11 +84,13 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
     uniform_size_aligned_vs_pica =
         Common::AlignUp<u32>(sizeof(VSPicaUniformData), uniform_buffer_alignment);
     uniform_size_aligned_vs = Common::AlignUp<u32>(sizeof(VSUniformData), uniform_buffer_alignment);
-    uniform_size_aligned_fs = Common::AlignUp<u32>(sizeof(FSUniformData), uniform_buffer_alignment);
+    uniform_size_aligned_fs =
+        Common::AlignUp<u32>(sizeof(FSUniformData) + sizeof(UberConfig), uniform_buffer_alignment);
 
     // Define vertex layout for software shaders
     MakeSoftwareVertexLayout();
     pipeline_info.state.vertex_layout = software_layout;
+    pipeline_cache.SetSoftwareLayout(software_layout);
 
     const vk::Device device = instance.GetDevice();
     texture_lf_view = device.createBufferViewUnique({
@@ -116,7 +118,8 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
     const auto buffer_set = pipeline_cache.Acquire(DescriptorHeapType::Buffer);
     update_queue.AddBuffer(buffer_set, 0, uniform_buffer.Handle(), 0, sizeof(VSPicaUniformData));
     update_queue.AddBuffer(buffer_set, 1, uniform_buffer.Handle(), 0, sizeof(VSUniformData));
-    update_queue.AddBuffer(buffer_set, 2, uniform_buffer.Handle(), 0, sizeof(FSUniformData));
+    update_queue.AddBuffer(buffer_set, 2, uniform_buffer.Handle(), 0,
+                           sizeof(FSUniformData) + sizeof(UberConfig));
     update_queue.AddTexelBuffer(buffer_set, 3, *texture_lf_view);
     update_queue.AddTexelBuffer(buffer_set, 4, *texture_rg_view);
     update_queue.AddTexelBuffer(buffer_set, 5, *texture_rgba_view);
@@ -482,6 +485,10 @@ bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
         SetupIndexArray();
     }
 
+    if (pipeline_cache.RedirectToFallback(pipeline_info, regs.pipeline.num_vertices)) {
+        return false;
+    }
+
     const bool wait_built = !async_shaders || regs.pipeline.num_vertices <= 6;
     if (!pipeline_cache.BindPipeline(pipeline_info, wait_built, regs.pipeline.num_vertices)) {
         return true;
@@ -600,7 +607,9 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     SyncUtilityTextures(framebuffer);
 
     // Sync and bind the shader
-    pipeline_cache.UseFragmentShader(regs, user_config);
+    if (pipeline_cache.UseFragmentShader(regs, user_config)) {
+        fs_data_dirty = true;
+    }
 
     // Sync the LUTs within the texture buffer
     SyncAndUploadLUTs();
@@ -1047,6 +1056,8 @@ void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
 
     if (fs_data_dirty || invalidate) {
         std::memcpy(uniforms + used_bytes, &fs_data, sizeof(fs_data));
+        std::memcpy(uniforms + used_bytes + sizeof(fs_data), pipeline_cache.GetUberConfig().data(),
+                    sizeof(UberConfig));
         pipeline_cache.UpdateRange(2, offset + used_bytes);
         fs_data_dirty = false;
         used_bytes += uniform_size_aligned_fs;

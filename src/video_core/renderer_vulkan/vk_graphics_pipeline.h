@@ -325,6 +325,9 @@ public:
 
     bool TryBuild(bool wait_built);
 
+    /// Queues the build even while the shaders are still compiling.
+    void QueueBuild();
+
     bool Build(bool fail_on_compile_required = false);
 
     [[nodiscard]] vk::Pipeline Handle() const noexcept {

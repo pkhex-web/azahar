@@ -97,7 +97,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
           DescriptorHeap{instance, scheduler.GetMasterSemaphore(), UTILITY_BINDINGS, 32}},
       trivial_vertex_shader{
           instance, vk::ShaderStageFlagBits::eVertex,
-          GLSL::GenerateTrivialVertexShader(instance.IsShaderClipDistanceSupported(), true)} {
+          GLSL::GenerateTrivialVertexShader(instance.IsShaderClipDistanceSupported(), true)},
+      ubershaders{*this} {
     scheduler.RegisterOnDispatch([this] { update_queue.Flush(); });
     profile = Pica::Shader::Profile{
         .enable_accurate_mul = false,
@@ -131,6 +132,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     }
 
     BuildLayout();
+    ubershaders.Init();
 }
 
 void PipelineCache::BuildLayout() {
@@ -157,6 +159,7 @@ PipelineCache::~PipelineCache() {
 void PipelineCache::LoadCache(const std::atomic_bool& stop_loading,
                               const VideoCore::DiskResourceLoadCallback& callback) {
     LoadDriverPipelineDiskCache(stop_loading, callback);
+    ubershaders.PrewarmSeeds();
     LoadDiskCache(stop_loading, callback);
 }
 
@@ -409,13 +412,9 @@ bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built, u32 vertic
         info.state.shader_ids[i] = shader_hashes[i];
     }
 
-    GraphicsPipeline* const pipeline = curr_disk_cache->GetPipeline(info);
     const bool stats = PipelineStats::Enabled();
     const bool hardware = current_shaders[ProgramType::VS] != &trivial_vertex_shader;
-    if (stats) {
-        PipelineStats::Request(instance, info, pipeline->IsDone(), hardware, vertices, stats_tex0,
-                               stats_tex0_on);
-    }
+    GraphicsPipeline* const pipeline = GetPipelineOrFallback(info, hardware, vertices);
     if (!pipeline->IsDone() && !pipeline->TryBuild(wait_built)) {
         if (stats) {
             PipelineStats::Skip(info.state.OptimizedHash(instance), hardware, vertices);
@@ -621,7 +620,7 @@ void PipelineCache::UseTrivialGeometryShader() {
     shader_hashes[ProgramType::GS] = 0;
 }
 
-void PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
+bool PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
                                       const Pica::Shader::UserConfig& user) {
 
     auto res = curr_disk_cache->UseFragmentShader(regs, user);
@@ -633,7 +632,9 @@ void PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
     if (res.has_value()) {
         current_shaders[ProgramType::FS] = (*res).second;
         shader_hashes[ProgramType::FS] = (*res).first;
+        return ubershaders.UseFragmentShader(regs, user, (*res).first);
     }
+    return false;
 }
 
 void PipelineCache::QueryBlendEmulation(const Pica::RegsInternal& regs, bool& rgb_emulation,

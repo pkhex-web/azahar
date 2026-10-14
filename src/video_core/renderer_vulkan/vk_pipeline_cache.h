@@ -10,6 +10,7 @@
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_shader_disk_cache.h"
+#include "video_core/renderer_vulkan/vk_ubershader.h"
 #include "video_core/shader/generator/pica_fs_config.h"
 #include "video_core/shader/generator/profile.h"
 #include "video_core/shader/generator/shader_gen.h"
@@ -69,6 +70,17 @@ public:
     /// Binds a pipeline using the provided information
     bool BindPipeline(PipelineInfo& info, bool wait_built = false, u32 vertices = 0);
 
+    /// Returns true when a hardware draw should go through the software path and the ubershader
+    bool RedirectToFallback(PipelineInfo& info, u32 vertices);
+
+    void SetSoftwareLayout(const VertexLayout& layout) {
+        ubershaders.SetSoftwareLayout(layout);
+    }
+
+    [[nodiscard]] const UberConfig& GetUberConfig() const noexcept {
+        return ubershaders.Config();
+    }
+
     Pica::Shader::Generator::ExtraVSConfig CalcExtraConfig(
         const Pica::Shader::Generator::PicaVSConfig& config);
 
@@ -85,8 +97,8 @@ public:
     /// Binds a passthrough geometry shader
     void UseTrivialGeometryShader();
 
-    /// Binds a fragment shader generated from PICA state
-    void UseFragmentShader(const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user);
+    /// Binds a fragment shader generated from PICA state. Returns true when the ubershader config changed.
+    bool UseFragmentShader(const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user);
 
     /// Queries which channels need min/max blend emulation in the fragment shader
     void QueryBlendEmulation(const Pica::RegsInternal& regs, bool& rgb_emulation,
@@ -107,6 +119,9 @@ public:
 
 private:
     friend ShaderDiskCache;
+    friend Ubershaders;
+
+    GraphicsPipeline* GetPipelineOrFallback(PipelineInfo& info, bool hardware, u32 vertices);
 
     /// Loads the driver pipeline cache
     void LoadDriverPipelineDiskCache(const std::atomic_bool& stop_loading = std::atomic_bool{false},
@@ -167,6 +182,7 @@ private:
     std::array<Shader*, MAX_SHADER_STAGES> current_shaders;
 
     Shader trivial_vertex_shader;
+    Ubershaders ubershaders;
     u32 stats_tex0{};
     bool stats_tex0_on{};
 
