@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <vector>
 #include "common/hash.h"
 #include "common/thread_worker.h"
 #include "video_core/pica/regs_pipeline.h"
@@ -317,6 +318,7 @@ class GraphicsPipeline : public Common::AsyncHandle {
 public:
     explicit GraphicsPipeline(const Instance& instance, RenderManager& renderpass_cache,
                               const PipelineInfo& info, vk::PipelineCache pipeline_cache,
+                              const std::vector<vk::PipelineCache>* worker_pipeline_caches,
                               vk::PipelineLayout layout, std::array<Shader*, 3> stages,
                               Common::ThreadWorker* worker);
     ~GraphicsPipeline();
@@ -341,6 +343,7 @@ private:
     vk::UniquePipeline pipeline;
     vk::PipelineLayout pipeline_layout;
     vk::PipelineCache pipeline_cache;
+    const std::vector<vk::PipelineCache>* worker_pipeline_caches;
 
     PipelineInfo info;
     std::array<Shader*, 3> stages;

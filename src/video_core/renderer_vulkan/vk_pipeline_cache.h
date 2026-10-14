@@ -115,6 +115,8 @@ private:
     /// Stores the generated pipeline cache
     void SaveDriverPipelineDiskCache();
 
+    void CreateWorkerPipelineCaches(const vk::PipelineCacheCreateInfo& cache_info);
+
     /// Loads the shader disk cache
     void LoadDiskCache(const std::atomic_bool& stop_loading = std::atomic_bool{false},
                        const VideoCore::DiskResourceLoadCallback& callback = {});
@@ -149,6 +151,8 @@ private:
 
     Pica::Shader::Profile profile{};
     vk::UniquePipelineCache driver_pipeline_cache;
+    std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
+    std::vector<vk::PipelineCache> worker_pipeline_cache_handles;
     vk::UniquePipelineLayout pipeline_layout;
     std::size_t num_worker_threads;
     Common::ThreadWorker pipeline_workers;
