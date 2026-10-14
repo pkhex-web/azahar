@@ -1527,7 +1527,7 @@ std::size_t IOFile::WriteImpl(const void* data, std::size_t length, std::size_t 
 
     std::size_t written;
 #if defined(HAVE_LIBRETRO_VFS)
-    written = rfwrite(data, elem_size, length, m_file) / elem_size;
+    written = rfwrite(data, elem_size, length, m_file);
 #else
     written = std::fwrite(data, elem_size, length, m_file);
 #endif
