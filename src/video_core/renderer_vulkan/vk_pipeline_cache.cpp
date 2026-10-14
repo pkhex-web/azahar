@@ -216,6 +216,7 @@ void PipelineCache::LoadDriverPipelineDiskCache(
                 }
             }
         }
+        CreateWorkerPipelineCaches(cache_info);
         if (callback) {
             callback(VideoCore::LoadCallbackStage::Build, 1, 1, "Driver Pipeline Cache");
         }
@@ -269,10 +270,47 @@ void PipelineCache::LoadDriverPipelineDiskCache(
     load_cache(true);
 }
 
+// MoltenVK holds a pipeline cache's lock while it converts and compiles a shader, so workers sharing
+// one cache compile one pipeline at a time. The extra cache is for the emulation thread, which builds
+// pipelines itself when async shaders are off.
+void PipelineCache::CreateWorkerPipelineCaches(const vk::PipelineCacheCreateInfo& cache_info) {
+    if (!worker_pipeline_cache_handles.empty()) {
+        pipeline_workers.WaitForRequests();
+    }
+    worker_pipeline_cache_handles.clear();
+    worker_pipeline_caches.clear();
+    if (instance.GetDriverID() != vk::DriverIdKHR::eMoltenvk) {
+        return;
+    }
+    const vk::Device device = instance.GetDevice();
+    for (std::size_t i = 0; i <= num_worker_threads; i++) {
+        try {
+            worker_pipeline_caches.push_back(device.createPipelineCacheUnique(cache_info));
+        } catch (const vk::SystemError& err) {
+            LOG_ERROR(Render_Vulkan, "Failed to create worker pipeline cache: {}", err.what());
+            worker_pipeline_caches.clear();
+            return;
+        }
+    }
+    for (const auto& cache : worker_pipeline_caches) {
+        worker_pipeline_cache_handles.push_back(*cache);
+    }
+    if (PipelineStats::Enabled()) {
+        PipelineStats::Write(fmt::format(R"({{"e":"worker_pipeline_caches","count":{}}})",
+                                         worker_pipeline_caches.size()));
+    }
+}
+
 void PipelineCache::SaveDriverPipelineDiskCache() {
     // Save Vulkan pipeline cache
     if (!Settings::values.use_disk_shader_cache || !driver_pipeline_cache) {
         return;
+    }
+
+    if (!worker_pipeline_cache_handles.empty()) {
+        pipeline_workers.WaitForRequests();
+        instance.GetDevice().mergePipelineCaches(*driver_pipeline_cache,
+                                                 worker_pipeline_cache_handles);
     }
 
     const auto cache_dir = GetPipelineCacheDir();

@@ -2,6 +2,7 @@
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
 
+#include <atomic>
 #include <boost/container/static_vector.hpp>
 
 #include "common/alignment.h"
@@ -75,10 +76,12 @@ Shader::~Shader() {
 
 GraphicsPipeline::GraphicsPipeline(const Instance& instance_, RenderManager& renderpass_cache_,
                                    const PipelineInfo& info_, vk::PipelineCache pipeline_cache_,
+                                   const std::vector<vk::PipelineCache>* worker_pipeline_caches_,
                                    vk::PipelineLayout layout_, std::array<Shader*, 3> stages_,
                                    Common::ThreadWorker* worker_)
     : instance{instance_}, renderpass_cache{renderpass_cache_}, worker{worker_},
-      pipeline_layout{layout_}, pipeline_cache{pipeline_cache_}, info{info_}, stages{stages_} {}
+      pipeline_layout{layout_}, pipeline_cache{pipeline_cache_},
+      worker_pipeline_caches{worker_pipeline_caches_}, info{info_}, stages{stages_} {}
 
 GraphicsPipeline::~GraphicsPipeline() = default;
 
@@ -309,7 +312,13 @@ bool GraphicsPipeline::Build(bool fail_on_compile_required) {
         PipelineStats::Building(Hash());
         started = PipelineStats::Now();
     }
-    auto result = instance.GetDevice().createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
+    vk::PipelineCache cache = pipeline_cache;
+    if (worker_pipeline_caches && !worker_pipeline_caches->empty()) {
+        static std::atomic<u32> next_thread{0};
+        thread_local const u32 thread_index = next_thread++;
+        cache = (*worker_pipeline_caches)[thread_index % worker_pipeline_caches->size()];
+    }
+    auto result = instance.GetDevice().createGraphicsPipelineUnique(cache, pipeline_info);
     if (PipelineStats::Enabled()) {
         PipelineStats::Built(Hash(), PipelineStats::Now() - started, fail_on_compile_required,
                              result.result == vk::Result::eSuccess);
