@@ -60,6 +60,8 @@ static constexpr const char* use_hw_shader = citra_setting(BaseKeys::use_hw_shad
 static constexpr const char* use_shader_jit = citra_setting(BaseKeys::use_shader_jit);
 static constexpr const char* shaders_accurate_mul = citra_setting(BaseKeys::shaders_accurate_mul);
 static constexpr const char* use_disk_shader_cache = citra_setting(BaseKeys::use_disk_shader_cache);
+static constexpr const char* async_shader_compilation =
+    citra_setting(BaseKeys::async_shader_compilation);
 static constexpr const char* resolution_factor = citra_setting(BaseKeys::resolution_factor);
 static constexpr const char* texture_filter = citra_setting(BaseKeys::texture_filter);
 static constexpr const char* texture_sampling = citra_setting(BaseKeys::texture_sampling);
@@ -375,6 +377,21 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
             { nullptr, nullptr }
         },
         config::enabled
+    },
+    {
+        config::graphics::async_shader_compilation,
+        "Async Shader Compilation",
+        "Async Shaders",
+        "Compile shaders in the background instead of waiting for them. "
+        "Reduces stutter but may cause brief graphical glitches. Only works with Vulkan.",
+        nullptr,
+        config::category::graphics,
+        {
+            { config::enabled, "Enabled" },
+            { config::disabled, "Disabled" },
+            { nullptr, nullptr }
+        },
+        config::disabled
     },
     {
         config::graphics::resolution_factor,
@@ -1002,6 +1019,10 @@ static void ParseGraphicsOptions(void) {
 
     Settings::values.use_disk_shader_cache =
         LibRetro::FetchVariable(config::graphics::use_disk_shader_cache, config::enabled) ==
+        config::enabled;
+
+    Settings::values.async_shader_compilation =
+        LibRetro::FetchVariable(config::graphics::async_shader_compilation, config::disabled) ==
         config::enabled;
 
     auto resolution = LibRetro::FetchVariable(config::graphics::resolution_factor, "1");
