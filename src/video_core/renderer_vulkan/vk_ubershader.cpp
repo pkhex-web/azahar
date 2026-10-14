@@ -5,6 +5,9 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
+#include <unordered_set>
+#include <fmt/format.h>
 
 #include "common/settings.h"
 #include "video_core/host_shaders/vulkan_fs_ubershader_frag.h"
@@ -360,6 +363,35 @@ GraphicsPipeline* PipelineCache::GetPipelineOrFallback(PipelineInfo& info, bool 
         PipelineStats::FallbackDraw();
     }
     return fallback;
+}
+
+bool PipelineCache::DebugSkipDraw(const PipelineInfo& info, u32 vertices, bool accelerate) {
+    static const std::unordered_set<u64> skipped = [] {
+        std::unordered_set<u64> hashes;
+        if (const char* list = std::getenv("AZAHAR_SKIP_FS")) {
+            std::stringstream stream{list};
+            std::string item;
+            while (std::getline(stream, item, ',')) {
+                if (!item.empty()) {
+                    hashes.insert(std::stoull(item, nullptr, 16));
+                }
+            }
+        }
+        return hashes;
+    }();
+    static const u64 log_frame = [] {
+        const char* frame = std::getenv("AZAHAR_LOG_DRAWS_FRAME");
+        return frame ? std::stoull(frame) : ~0ULL;
+    }();
+    const u64 fs = shader_hashes[ProgramType::FS];
+    const bool skip = skipped.contains(fs);
+    if (PipelineStats::Enabled() && PipelineStats::Frame() == log_frame) {
+        PipelineStats::Write(fmt::format(
+            R"({{"e":"draw","f":{},"fs":"{:016x}","n":{},"accel":{},"be":{},"bf":"{:08x}","tex0":{},"skip":{}}})",
+            log_frame, fs, vertices, accelerate, info.state.blending.blend_enable,
+            info.state.blending.value, stats_tex0, skip));
+    }
+    return skip;
 }
 
 } // namespace Vulkan

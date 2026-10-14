@@ -610,6 +610,12 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     if (pipeline_cache.UseFragmentShader(regs, user_config)) {
         fs_data_dirty = true;
     }
+    if (pipeline_cache.DebugSkipDraw(pipeline_info, accelerate ? regs.pipeline.num_vertices
+                                                               : vertex_batch.size(),
+                                     accelerate)) {
+        vertex_batch.clear();
+        return true;
+    }
 
     // Sync the LUTs within the texture buffer
     SyncAndUploadLUTs();

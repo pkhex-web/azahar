@@ -73,6 +73,10 @@ public:
     /// Returns true when a hardware draw should go through the software path and the ubershader
     bool RedirectToFallback(PipelineInfo& info, u32 vertices);
 
+    /// Drops draws whose fragment shader is listed in AZAHAR_SKIP_FS, and logs the draws of the
+    /// frame in AZAHAR_LOG_DRAWS_FRAME. For comparing screenshots between runs.
+    bool DebugSkipDraw(const PipelineInfo& info, u32 vertices, bool accelerate);
+
     void SetSoftwareLayout(const VertexLayout& layout) {
         ubershaders.SetSoftwareLayout(layout);
     }
