@@ -10,6 +10,7 @@
 #include "video_core/renderer_vulkan/pica_to_vk.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_pipeline_stats.h"
 #include "video_core/renderer_vulkan/vk_render_manager.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
@@ -303,7 +304,16 @@ bool GraphicsPipeline::Build(bool fail_on_compile_required) {
         pipeline_info.flags |= vk::PipelineCreateFlagBits::eFailOnPipelineCompileRequiredEXT;
     }
 
+    u64 started = 0;
+    if (PipelineStats::Enabled()) {
+        PipelineStats::Building(Hash());
+        started = PipelineStats::Now();
+    }
     auto result = instance.GetDevice().createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
+    if (PipelineStats::Enabled()) {
+        PipelineStats::Built(Hash(), PipelineStats::Now() - started, fail_on_compile_required,
+                             result.result == vk::Result::eSuccess);
+    }
     if (result.result == vk::Result::eSuccess) {
         pipeline = std::move(result.value);
     } else if (result.result == vk::Result::eErrorPipelineCompileRequiredEXT) {

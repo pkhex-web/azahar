@@ -67,7 +67,7 @@ public:
                      const VideoCore::DiskResourceLoadCallback& callback = {});
 
     /// Binds a pipeline using the provided information
-    bool BindPipeline(PipelineInfo& info, bool wait_built = false);
+    bool BindPipeline(PipelineInfo& info, bool wait_built = false, u32 vertices = 0);
 
     Pica::Shader::Generator::ExtraVSConfig CalcExtraConfig(
         const Pica::Shader::Generator::PicaVSConfig& config);
@@ -163,6 +163,8 @@ private:
     std::array<Shader*, MAX_SHADER_STAGES> current_shaders;
 
     Shader trivial_vertex_shader;
+    u32 stats_tex0{};
+    bool stats_tex0_on{};
 
     u64 current_program_id{0};
     std::vector<std::shared_ptr<ShaderDiskCache>> disk_caches;

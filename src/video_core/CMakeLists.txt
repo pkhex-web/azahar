@@ -183,6 +183,8 @@ if (ENABLE_VULKAN)
         renderer_vulkan/vk_instance.h
         renderer_vulkan/vk_pipeline_cache.cpp
         renderer_vulkan/vk_pipeline_cache.h
+        renderer_vulkan/vk_pipeline_stats.cpp
+        renderer_vulkan/vk_pipeline_stats.h
         $<$<NOT:$<BOOL:${ENABLE_LIBRETRO}>>:renderer_vulkan/vk_platform.cpp>
         renderer_vulkan/vk_platform.h
         $<$<NOT:$<BOOL:${ENABLE_LIBRETRO}>>:renderer_vulkan/vk_present_window.cpp>

@@ -15,6 +15,7 @@
 #include "common/logging/log.h"
 #include "common/settings.h"
 #include "core/frontend/emu_window.h"
+#include "video_core/renderer_vulkan/vk_pipeline_stats.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
 #include <vk_mem_alloc.h>
@@ -333,6 +334,18 @@ LibRetroVKInstance::LibRetroVKInstance(Frontend::EmuWindow& window,
     CollectToolingInfo();
     CreateCustomFormatTable();
     CreateAttribTable();
+
+    if (PipelineStats::Enabled()) {
+        PipelineStats::Write(fmt::format(
+            R"({{"e":"instance","driver":"{}","extended_dynamic_state":{},"null_descriptor":{},"timeline_semaphores":{},"custom_border_color":{},"index_type_uint8":{},"fragment_shader_interlock":{},"pipeline_creation_cache_control":{},"fragment_shader_barycentric":{},"triangle_fan":{},"image_view_reinterpretation":{},"logic_op_emulation":{},"geometry_shaders":{},"shader_stencil_export":{},"external_memory_host":{},"image_format_list":{},"layered_rendering":{}}})",
+            GetDriverVersionName(), IsExtendedDynamicStateSupported(), IsNullDescriptorSupported(),
+            IsTimelineSemaphoreSupported(), IsCustomBorderColorSupported(),
+            IsIndexTypeUint8Supported(), IsFragmentShaderInterlockSupported(),
+            IsPipelineCreationCacheControlSupported(), IsFragmentShaderBarycentricSupported(),
+            IsTriangleFanSupported(), image_view_reinterpretation, NeedsLogicOpEmulation(),
+            UseGeometryShaders(), IsShaderStencilExportSupported(), IsExternalMemoryHostSupported(),
+            IsImageFormatListSupported(), IsLayeredRenderingSupported()));
+    }
 
     LOG_INFO(Render_Vulkan, "LibRetro Vulkan Instance initialized successfully");
     LOG_INFO(Render_Vulkan, "Device: {} ({})", properties.deviceName.data(), GetVendorName());

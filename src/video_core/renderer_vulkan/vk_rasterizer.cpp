@@ -483,7 +483,7 @@ bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
     }
 
     const bool wait_built = !async_shaders || regs.pipeline.num_vertices <= 6;
-    if (!pipeline_cache.BindPipeline(pipeline_info, wait_built)) {
+    if (!pipeline_cache.BindPipeline(pipeline_info, wait_built, regs.pipeline.num_vertices)) {
         return true;
     }
 
@@ -625,7 +625,7 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     if (accelerate) {
         succeeded = AccelerateDrawBatchInternal(is_indexed);
     } else {
-        pipeline_cache.BindPipeline(pipeline_info, true);
+        pipeline_cache.BindPipeline(pipeline_info, true, static_cast<u32>(vertex_batch.size()));
 
         const u32 vertex_count = static_cast<u32>(vertex_batch.size());
         const u32 vertex_size = vertex_count * sizeof(HardwareVertex);
