@@ -2,6 +2,7 @@
 // Licensed under GPLv3 or any later version
 // Refer to the LICENSE.txt file included.
 
+#include <cstdlib>
 #include <boost/hana/string.hpp>
 
 #include "citra_libretro/core_settings.h"
@@ -872,6 +873,11 @@ static void ParseCpuOptions(void) {
 
     auto cpu_clock = LibRetro::FetchVariable(config::cpu::cpu_clock_percentage, "100");
     Settings::values.cpu_clock_percentage = std::stoi(cpu_clock);
+
+    if (const char* fixed_time = std::getenv("AZAHAR_FIXED_TIME"); fixed_time && *fixed_time) {
+        Settings::values.init_clock = Settings::InitClock::FixedTime;
+        Settings::values.init_time = std::stoull(fixed_time);
+    }
 }
 
 static int GetRegionValue(const std::string& name) {
