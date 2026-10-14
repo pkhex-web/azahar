@@ -10,6 +10,7 @@
 #include "common/zstd_compression.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/renderer_vulkan/vk_pipeline_stats.h"
 #include "video_core/renderer_vulkan/vk_shader_disk_cache.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/shader/generator/glsl_fs_shader_gen.h"
@@ -123,11 +124,16 @@ std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseProgrammableVer
 
             shader.program = std::move(program);
             const vk::Device device = parent.instance.GetDevice();
-            parent.shader_workers.QueueWork([device, &shader, this, spirv_id] {
+            parent.shader_workers.QueueWork([device, &shader, this, spirv_id, config_hash] {
+                const u64 started = PipelineStats::Enabled() ? PipelineStats::Now() : 0;
                 auto spirv = CompileGLSL(shader.program, vk::ShaderStageFlagBits::eVertex);
                 AppendVSSPIRV(vs_cache, spirv, spirv_id);
                 shader.program.clear();
                 shader.module = CompileSPV(spirv, device);
+                if (PipelineStats::Enabled()) {
+                    PipelineStats::VertexShader(config_hash, spirv_id,
+                                                PipelineStats::Now() - started);
+                }
                 shader.MarkDone();
             });
         }
@@ -158,9 +164,11 @@ std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseFragmentShader(
         LOG_NEW_OBJECT(Render_Vulkan, "New FS config {:016X}", fs_config_hash);
 
         parent.shader_workers.QueueWork([fs_config, user, this, &shader, fs_config_hash]() {
+            const u64 started = PipelineStats::Enabled() ? PipelineStats::Now() : 0;
             std::vector<u32> spirv;
             const bool use_spirv = parent.profile.vk_use_spirv_generator;
-            if (use_spirv && !fs_config.UsesSpirvIncompatibleConfig()) {
+            const bool glsl = !use_spirv || fs_config.UsesSpirvIncompatibleConfig();
+            if (!glsl) {
                 spirv = SPIRV::GenerateFragmentShader(fs_config, parent.profile);
                 shader.module = CompileSPV(spirv, parent.instance.GetDevice());
             } else {
@@ -168,6 +176,10 @@ std::optional<std::pair<u64, Shader* const>> ShaderDiskCache::UseFragmentShader(
                     GLSL::GenerateFragmentShader(fs_config, user, parent.profile);
                 spirv = CompileGLSL(code, vk::ShaderStageFlagBits::eFragment);
                 shader.module = CompileSPV(spirv, parent.instance.GetDevice());
+            }
+            if (PipelineStats::Enabled()) {
+                PipelineStats::FragmentShader(fs_config, fs_config_hash,
+                                              PipelineStats::Now() - started, glsl);
             }
             shader.MarkDone();
 

@@ -17,6 +17,7 @@
 #include "video_core/renderer_vulkan/vk_descriptor_update_queue.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/renderer_vulkan/vk_pipeline_stats.h"
 #include "video_core/renderer_vulkan/vk_render_manager.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -365,7 +366,7 @@ void PipelineCache::SwitchDiskCache(u64 title_id, const std::atomic_bool& stop_l
     }
 }
 
-bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built) {
+bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built, u32 vertices) {
     MICROPROFILE_SCOPE(Vulkan_Bind);
 
     for (u32 i = 0; i < MAX_SHADER_STAGES; i++) {
@@ -373,13 +374,22 @@ bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built) {
     }
 
     GraphicsPipeline* const pipeline = curr_disk_cache->GetPipeline(info);
+    const bool stats = PipelineStats::Enabled();
+    const bool hardware = current_shaders[ProgramType::VS] != &trivial_vertex_shader;
+    if (stats) {
+        PipelineStats::Request(instance, info, pipeline->IsDone(), hardware, vertices, stats_tex0,
+                               stats_tex0_on);
+    }
     if (!pipeline->IsDone() && !pipeline->TryBuild(wait_built)) {
+        if (stats) {
+            PipelineStats::Skip(info.state.OptimizedHash(instance), hardware, vertices);
+        }
         return false;
     }
 
     const bool is_dirty = scheduler.IsStateDirty(StateFlags::Pipeline);
     const bool pipeline_dirty = (current_pipeline != pipeline) || is_dirty;
-    scheduler.Record([this, is_dirty, pipeline_dirty, pipeline,
+    scheduler.Record([this, is_dirty, pipeline_dirty, pipeline, stats,
                       current_dynamic = current_info.dynamic_info, dynamic = info.dynamic_info,
                       descriptor_sets = bound_descriptor_sets, offsets = offsets,
                       current_rasterization = current_info.state.rasterization,
@@ -482,7 +492,11 @@ bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built) {
 
         if (pipeline_dirty) {
             if (!pipeline->IsDone()) {
+                const u64 started = stats ? PipelineStats::Now() : 0;
                 pipeline->WaitDone();
+                if (stats) {
+                    PipelineStats::Wait(pipeline->Hash(), PipelineStats::Now() - started);
+                }
             }
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
         }
@@ -575,6 +589,10 @@ void PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
                                       const Pica::Shader::UserConfig& user) {
 
     auto res = curr_disk_cache->UseFragmentShader(regs, user);
+    if (PipelineStats::Enabled()) {
+        stats_tex0 = static_cast<u32>(regs.texturing.texture0.type.Value());
+        stats_tex0_on = regs.texturing.main_config.texture0_enable != 0;
+    }
 
     if (res.has_value()) {
         current_shaders[ProgramType::FS] = (*res).second;

@@ -13,6 +13,7 @@
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 #include "video_core/renderer_vulkan/vk_memory_util.h"
+#include "video_core/renderer_vulkan/vk_pipeline_stats.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
 #include "video_core/host_shaders/vulkan_present_anaglyph_frag.h"
@@ -1124,6 +1125,7 @@ void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
 }
 
 void RendererVulkan::SwapBuffers() {
+    PipelineStats::EndFrame();
     system.perf_stats->StartSwap();
     screenRendered = false;
 #ifndef ANDROID

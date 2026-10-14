@@ -329,6 +329,10 @@ public:
         return *pipeline;
     }
 
+    [[nodiscard]] u64 Hash() const {
+        return info.state.OptimizedHash(instance);
+    }
+
 private:
     const Instance& instance;
     RenderManager& renderpass_cache;
