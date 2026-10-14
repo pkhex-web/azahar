@@ -63,7 +63,10 @@ layout(set = 0, binding = 3) uniform samplerBuffer texture_buffer_lut_lf;
 layout(set = 0, binding = 4) uniform samplerBuffer texture_buffer_lut_rg;
 layout(set = 0, binding = 5) uniform samplerBuffer texture_buffer_lut_rgba;
 
-#if defined(TEX0_CUBE)
+#if defined(TEX0_ALIASED)
+layout(set = 1, binding = 0) uniform sampler2D tex0;
+layout(set = 1, binding = 0) uniform samplerCube tex0_cube;
+#elif defined(TEX0_CUBE)
 layout(set = 1, binding = 0) uniform samplerCube tex0;
 #elif defined(TEX0_SHADOW)
 layout(set = 1, binding = 0) uniform usampler2D tex0;
@@ -183,7 +186,17 @@ vec4 SampleTex0() {
     if (BorderHit(0, texcoord0)) {
         return tex_border_color[0];
     }
-#if defined(TEX0_CUBE)
+#if defined(TEX0_ALIASED)
+    if (type == 0u) {
+        return SampleLod(tex0, texcoord0, 0);
+    }
+    if (type == 3u) {
+        return textureProj(tex0, vec3(texcoord0, texcoord0_w));
+    }
+    if (type == 1u) {
+        return texture(tex0_cube, vec3(texcoord0, texcoord0_w));
+    }
+#elif defined(TEX0_CUBE)
     if (type == 1u) {
         return texture(tex0, vec3(texcoord0, texcoord0_w));
     }

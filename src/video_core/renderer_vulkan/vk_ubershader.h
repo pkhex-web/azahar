@@ -32,6 +32,9 @@ enum class UberTex0 : u32 {
 
 constexpr u32 NumUberTex0 = 3;
 
+/// The three tex0 variants, plus one declaring tex0 as both sampler2D and samplerCube.
+constexpr u32 NumUberVariants = NumUberTex0 + 1;
+
 /// The applied FSConfig followed by values derived from it, appended to the fragment uniform block.
 using UberConfig = std::array<u32, 72>;
 
@@ -101,13 +104,19 @@ public:
 private:
     StaticPipelineInfo FallbackState(const StaticPipelineInfo& state, UberTex0 tex0) const;
 
-    GraphicsPipeline* GetState(const StaticPipelineInfo& state, const char* source);
+    u32 Variant(UberTex0 tex0) const;
+
+    GraphicsPipeline* GetState(const StaticPipelineInfo& state, const char* source,
+                               bool early = false);
 
     PipelineCache& parent;
     bool active{};
     bool forced{};
     bool software_only{};
-    std::array<std::unique_ptr<Shader>, NumUberTex0> shaders;
+    bool aliased{};
+    bool prewarm_all{};
+    bool early{};
+    std::array<std::unique_ptr<Shader>, NumUberVariants> shaders;
     VertexLayout software_layout{};
     std::unordered_map<u64, std::unique_ptr<GraphicsPipeline>> pipelines;
     UberConfig config{};

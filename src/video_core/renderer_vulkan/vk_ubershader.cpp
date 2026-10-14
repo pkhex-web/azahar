@@ -37,10 +37,11 @@ static_assert(offsetof(Pica::Shader::ProcTexConfig, lod_min) == 6 * sizeof(u32))
 constexpr u32 TexturesUsedWord = 68;
 constexpr u64 UberShaderId = 0x75626572'00000000ULL;
 
-constexpr std::array<const char*, NumUberTex0> Preambles = {
+constexpr std::array<const char*, NumUberVariants> Preambles = {
     "",
     "#define TEX0_CUBE\n",
     "#define TEX0_SHADOW\n",
+    "#define TEX0_ALIASED\n",
 };
 
 // The (blend, attachments) combinations Pokémon X draws with, read from the shader harness.
@@ -138,12 +139,18 @@ Ubershaders::~Ubershaders() = default;
 void Ubershaders::Init() {
     forced = EnvOn("AZAHAR_UBERSHADER_FORCE");
     software_only = EnvOn("AZAHAR_UBERSHADER_SOFTWARE_ONLY");
+    aliased = EnvOn("AZAHAR_UBERSHADER_ALIASED");
+    prewarm_all = EnvOn("AZAHAR_UBERSHADER_PREWARM_ALL");
+    early = EnvOn("AZAHAR_UBERSHADER_EARLY");
     active = forced ||
              (Settings::values.async_shader_compilation.GetValue() && EnvOn("AZAHAR_UBERSHADER"));
     if (!active) {
         return;
     }
-    for (u32 i = 0; i < NumUberTex0; i++) {
+    for (u32 i = 0; i < NumUberVariants; i++) {
+        if (i == NumUberTex0 && !aliased) {
+            continue;
+        }
         shaders[i] = std::make_unique<Shader>(parent.instance);
         Shader* const shader = shaders[i].get();
         parent.shader_workers.QueueWork([this, shader, i] {
@@ -162,6 +169,9 @@ void Ubershaders::Init() {
 
 void Ubershaders::SetSoftwareLayout(const VertexLayout& layout) {
     software_layout = layout;
+    if (early) {
+        PrewarmSeeds();
+    }
 }
 
 bool Ubershaders::UseFragmentShader(const Pica::RegsInternal& regs,
@@ -187,7 +197,7 @@ StaticPipelineInfo Ubershaders::FallbackState(const StaticPipelineInfo& state,
                                               UberTex0 tex0) const {
     const Instance& instance = parent.instance;
     StaticPipelineInfo fallback{};
-    fallback.shader_ids = {0, UberShaderId + static_cast<u64>(tex0), 0};
+    fallback.shader_ids = {0, UberShaderId + Variant(tex0), 0};
     fallback.blending = state.blending;
     fallback.attachments = state.attachments;
     fallback.vertex_layout = software_layout;
@@ -214,7 +224,12 @@ StaticPipelineInfo Ubershaders::FallbackState(const StaticPipelineInfo& state,
     return fallback;
 }
 
-GraphicsPipeline* Ubershaders::GetState(const StaticPipelineInfo& state, const char* source) {
+u32 Ubershaders::Variant(UberTex0 tex0) const {
+    return aliased && tex0 != UberTex0::Shadow2D ? NumUberTex0 : static_cast<u32>(tex0);
+}
+
+GraphicsPipeline* Ubershaders::GetState(const StaticPipelineInfo& state, const char* source,
+                                        bool before_caches) {
     const u64 hash = state.OptimizedHash(parent.instance);
     auto [it, created] = pipelines.try_emplace(hash);
     if (created) {
@@ -224,9 +239,10 @@ GraphicsPipeline* Ubershaders::GetState(const StaticPipelineInfo& state, const c
         const std::array<Shader*, MAX_SHADER_STAGES> stages = {
             &parent.trivial_vertex_shader, shaders[tex0].get(), nullptr};
         it->second = std::make_unique<GraphicsPipeline>(
-            parent.instance, parent.renderpass_cache, info, *parent.driver_pipeline_cache,
-            &parent.worker_pipeline_cache_handles, *parent.pipeline_layout, stages,
-            &parent.pipeline_workers);
+            parent.instance, parent.renderpass_cache, info,
+            before_caches ? vk::PipelineCache{} : *parent.driver_pipeline_cache,
+            before_caches ? nullptr : &parent.worker_pipeline_cache_handles,
+            *parent.pipeline_layout, stages, &parent.pipeline_workers);
         if (PipelineStats::Enabled()) {
             PipelineStats::FallbackPipeline(hash, tex0, source, state.blending.blend_enable,
                                             state.blending.value,
@@ -254,6 +270,7 @@ void Ubershaders::PrewarmSeeds() {
     if (!active) {
         return;
     }
+    const bool early_seed = !parent.driver_pipeline_cache;
     for (const Seed& seed : Seeds) {
         StaticPipelineInfo state{};
         state.blending.blend_enable = 1;
@@ -261,7 +278,10 @@ void Ubershaders::PrewarmSeeds() {
         state.blending.value = seed.blend;
         state.attachments.color = VideoCore::PixelFormat::RGBA8;
         state.attachments.depth = seed.depth;
-        GetState(FallbackState(state, UberTex0::Texture2D), "seed");
+        for (u32 tex0 = 0; tex0 < (prewarm_all ? NumUberTex0 : 1); tex0++) {
+            GetState(FallbackState(state, static_cast<UberTex0>(tex0)), early_seed ? "early" : "seed",
+                     early_seed);
+        }
     }
 }
 
