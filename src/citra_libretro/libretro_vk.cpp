@@ -3,6 +3,7 @@
 // Refer to the misc/licenses/gplv2.txt file included.
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -98,16 +99,25 @@ bool CreateVulkanDevice(struct retro_vulkan_context* context, VkInstance instanc
     AddExtensionIfAvailable(enabled_exts, available_exts,
                             VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     AddExtensionIfAvailable(enabled_exts, available_exts, VK_EXT_TOOLING_INFO_EXTENSION_NAME);
-    AddExtensionIfAvailable(enabled_exts, available_exts, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    const bool has_portability_subset = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
     const bool has_custom_border_color = AddExtensionIfAvailable(
         enabled_exts, available_exts, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
 
-    // These are beneficial but blacklisted on some platforms due to driver bugs
-    // For now, let the Instance class handle these decisions
-    // AddExtensionIfAvailable(enabled_exts, available_exts,
-    // VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
-    // AddExtensionIfAvailable(enabled_exts, available_exts,
-    // VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+    // Instance turns these on from what the physical device offers, minus its own blacklist,
+    // so the device has to enable them for Instance's choices to be valid.
+    const bool has_extended_dynamic_state = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+    const bool has_index_type_uint8 = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME);
+    const bool has_robustness2 =
+        AddExtensionIfAvailable(enabled_exts, available_exts, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
+    const bool has_fragment_shader_interlock = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME);
+    const bool has_pipeline_creation_cache_control = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
+    const bool has_fragment_shader_barycentric = AddExtensionIfAvailable(
+        enabled_exts, available_exts, VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
 
     // Merge frontend's required features with our baseline
     VkPhysicalDeviceFeatures merged_features{};
@@ -179,6 +189,69 @@ bool CreateVulkanDevice(struct retro_vulkan_context* context, VkInstance instanc
         custom_border_color_features.customBorderColorWithoutFormat = VK_TRUE;
         custom_border_color_features.pNext = enabled_features.pNext;
         enabled_features.pNext = &custom_border_color_features;
+    }
+
+    VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR};
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_dynamic_state_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
+    VkPhysicalDeviceIndexTypeUint8FeaturesEXT index_type_uint8_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
+    VkPhysicalDeviceRobustness2FeaturesEXT robustness2_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
+    VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT fragment_shader_interlock_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT};
+    VkPhysicalDevicePipelineCreationCacheControlFeaturesEXT pipeline_creation_cache_control_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES_EXT};
+    VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR fragment_shader_barycentric_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR};
+
+    const std::array<std::pair<bool, VkBaseOutStructure*>, 7> extension_features{{
+        {has_portability_subset, reinterpret_cast<VkBaseOutStructure*>(&portability_features)},
+        {has_extended_dynamic_state,
+         reinterpret_cast<VkBaseOutStructure*>(&extended_dynamic_state_features)},
+        {has_index_type_uint8, reinterpret_cast<VkBaseOutStructure*>(&index_type_uint8_features)},
+        {has_robustness2, reinterpret_cast<VkBaseOutStructure*>(&robustness2_features)},
+        {has_fragment_shader_interlock,
+         reinterpret_cast<VkBaseOutStructure*>(&fragment_shader_interlock_features)},
+        {has_pipeline_creation_cache_control,
+         reinterpret_cast<VkBaseOutStructure*>(&pipeline_creation_cache_control_features)},
+        {has_fragment_shader_barycentric,
+         reinterpret_cast<VkBaseOutStructure*>(&fragment_shader_barycentric_features)},
+    }};
+    VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    for (const auto& [present, features] : extension_features) {
+        if (present) {
+            features->pNext = static_cast<VkBaseOutStructure*>(supported.pNext);
+            supported.pNext = features;
+        }
+    }
+    const auto vkGetPhysicalDeviceFeatures2 =
+        reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
+            get_instance_proc_addr(instance, "vkGetPhysicalDeviceFeatures2"));
+    if (supported.pNext && vkGetPhysicalDeviceFeatures2) {
+        vkGetPhysicalDeviceFeatures2(gpu, &supported);
+
+        // Only what Instance reads, so nothing costly like robust buffer access comes along.
+        robustness2_features = {
+            .sType = robustness2_features.sType,
+            .pNext = robustness2_features.pNext,
+            .nullDescriptor = robustness2_features.nullDescriptor,
+        };
+        fragment_shader_interlock_features = {
+            .sType = fragment_shader_interlock_features.sType,
+            .pNext = fragment_shader_interlock_features.pNext,
+            .fragmentShaderPixelInterlock =
+                fragment_shader_interlock_features.fragmentShaderPixelInterlock,
+        };
+
+        void* const chain = supported.pNext;
+        auto* last = static_cast<VkBaseOutStructure*>(chain);
+        while (last->pNext) {
+            last = last->pNext;
+        }
+        last->pNext = static_cast<VkBaseOutStructure*>(enabled_features.pNext);
+        enabled_features.pNext = chain;
     }
 
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
