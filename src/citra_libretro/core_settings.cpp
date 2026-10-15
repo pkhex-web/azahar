@@ -63,6 +63,7 @@ static constexpr const char* shaders_accurate_mul = citra_setting(BaseKeys::shad
 static constexpr const char* use_disk_shader_cache = citra_setting(BaseKeys::use_disk_shader_cache);
 static constexpr const char* async_shader_compilation =
     citra_setting(BaseKeys::async_shader_compilation);
+static constexpr const char* ubershader_fallback = citra_setting(BaseKeys::ubershader_fallback);
 static constexpr const char* resolution_factor = citra_setting(BaseKeys::resolution_factor);
 static constexpr const char* texture_filter = citra_setting(BaseKeys::texture_filter);
 static constexpr const char* texture_sampling = citra_setting(BaseKeys::texture_sampling);
@@ -385,6 +386,22 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
         "Async Shaders",
         "Compile shaders in the background instead of waiting for them. "
         "Reduces stutter but may cause brief graphical glitches. Only works with Vulkan.",
+        nullptr,
+        config::category::graphics,
+        {
+            { config::enabled, "Enabled" },
+            { config::disabled, "Disabled" },
+            { nullptr, nullptr }
+        },
+        config::disabled
+    },
+    {
+        config::graphics::ubershader_fallback,
+        "Ubershader Fallback",
+        "Ubershader Fallback",
+        "With async shaders on, draw with a general shader while a draw's own shader compiles, "
+        "instead of skipping the draw. Runs those draws' vertex shaders on the CPU. Only works "
+        "with Vulkan.",
         nullptr,
         config::category::graphics,
         {
@@ -1029,6 +1046,10 @@ static void ParseGraphicsOptions(void) {
 
     Settings::values.async_shader_compilation =
         LibRetro::FetchVariable(config::graphics::async_shader_compilation, config::disabled) ==
+        config::enabled;
+
+    Settings::values.ubershader_fallback =
+        LibRetro::FetchVariable(config::graphics::ubershader_fallback, config::disabled) ==
         config::enabled;
 
     auto resolution = LibRetro::FetchVariable(config::graphics::resolution_factor, "1");
