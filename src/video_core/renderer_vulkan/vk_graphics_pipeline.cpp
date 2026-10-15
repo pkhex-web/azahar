@@ -110,6 +110,14 @@ bool GraphicsPipeline::TryBuild(bool wait_built) {
     return wait_built;
 }
 
+void GraphicsPipeline::QueueBuild() {
+    if (is_pending || IsDone()) {
+        return;
+    }
+    worker->QueueWork([this] { Build(); });
+    is_pending = true;
+}
+
 bool GraphicsPipeline::Build(bool fail_on_compile_required) {
     MICROPROFILE_SCOPE(Vulkan_Pipeline);
 

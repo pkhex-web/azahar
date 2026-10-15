@@ -34,6 +34,10 @@ struct Sink {
     std::atomic<u32> skips{0};
     std::atomic<u32> waits{0};
     std::atomic<u64> wait_ns{0};
+    std::atomic<u32> fallback{0};
+    std::atomic<u32> redirected{0};
+    std::atomic<u32> missing{0};
+    std::atomic<u32> ineligible{0};
 
     Sink() {
         const char* path = std::getenv("AZAHAR_PIPELINE_STATS");
@@ -85,9 +89,11 @@ void EndFrame() {
     Sink& sink = GetSink();
     const u64 frame = sink.frame.fetch_add(1, std::memory_order_relaxed);
     Write(fmt::format(
-        R"({{"e":"frame","t":{},"f":{},"draws":{},"hw":{},"pending":{},"skips":{},"waits":{},"wait_ns":{}}})",
+        R"({{"e":"frame","t":{},"f":{},"draws":{},"hw":{},"pending":{},"skips":{},"waits":{},"wait_ns":{},"fb":{},"redir":{},"fbmiss":{},"inelig":{}}})",
         Now(), frame, sink.draws.exchange(0), sink.hardware.exchange(0), sink.pending.exchange(0),
-        sink.skips.exchange(0), sink.waits.exchange(0), sink.wait_ns.exchange(0)));
+        sink.skips.exchange(0), sink.waits.exchange(0), sink.wait_ns.exchange(0),
+        sink.fallback.exchange(0), sink.redirected.exchange(0), sink.missing.exchange(0),
+        sink.ineligible.exchange(0)));
 }
 
 void Request(const Instance& instance, const PipelineInfo& info, bool done, bool hardware,
@@ -172,6 +178,34 @@ void FragmentShader(const Pica::Shader::FSConfig& config, u64 hash, u64 ns, bool
 void VertexShader(u64 config, u64 program, u64 ns) {
     Write(fmt::format(R"({{"e":"vs","t":{},"f":{},"vs":"{:016x}","program":"{:016x}","ns":{}}})",
                       Now(), Frame(), config, program, ns));
+}
+
+void Ubershader(u32 variant, u64 ns, u64 bytes) {
+    Write(fmt::format(R"({{"e":"uber","t":{},"f":{},"tex0":{},"ns":{},"bytes":{}}})", Now(),
+                      Frame(), variant, ns, bytes));
+}
+
+void FallbackPipeline(u64 pipeline, u32 variant, const char* source, u32 blend_enable, u32 blend,
+                      u32 write_mask, u32 color, u32 depth) {
+    Write(fmt::format(
+        R"({{"e":"fbpl","t":{},"f":{},"pl":"{:016x}","tex0":{},"source":"{}","be":{},"bf":"{:08x}","wm":{},"color":{},"depth":{}}})",
+        Now(), Frame(), pipeline, variant, source, blend_enable, blend, write_mask, color, depth));
+}
+
+void FallbackDraw() {
+    GetSink().fallback.fetch_add(1, std::memory_order_relaxed);
+}
+
+void Redirect() {
+    GetSink().redirected.fetch_add(1, std::memory_order_relaxed);
+}
+
+void FallbackMissing() {
+    GetSink().missing.fetch_add(1, std::memory_order_relaxed);
+}
+
+void Ineligible() {
+    GetSink().ineligible.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace Vulkan::PipelineStats

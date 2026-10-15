@@ -67,8 +67,15 @@ public:
     void SwitchCache(u64 title_id, const std::atomic_bool& stop_loading = std::atomic_bool{false},
                      const VideoCore::DiskResourceLoadCallback& callback = {});
 
-    /// Binds a pipeline using the provided information
-    bool BindPipeline(PipelineInfo& info, bool wait_built = false, u32 vertices = 0);
+    /// Decides how a draw is drawn. Async shaders skip hardware draws of more than 6 vertices
+    /// whose pipeline isn't built, unless the ubershader fallback draws them.
+    DrawPlan PlanDraw(PipelineInfo& info, u32 vertices, bool async);
+
+    /// Binds the pipeline a draw plan chose
+    void BindPipeline(const PipelineInfo& info, const DrawPlan& plan);
+
+    /// Starts building the ubershader fallback pipelines
+    void PrewarmFallbacks(const VertexLayout& software_layout);
 
     Pica::Shader::Generator::ExtraVSConfig CalcExtraConfig(
         const Pica::Shader::Generator::PicaVSConfig& config);
@@ -89,11 +96,6 @@ public:
     /// Binds a fragment shader generated from PICA state. Returns true when the ubershader config
     /// in the fragment uniform block changed.
     bool UseFragmentShader(const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user);
-
-    /// Whether hardware draws of the current fragment shader go through the CPU vertex path.
-    [[nodiscard]] bool UsesCpuVertexPath() const noexcept {
-        return ubershader.UsesCpuVertexPath();
-    }
 
     [[nodiscard]] const UberConfig& GetUberConfig() const noexcept {
         return ubershader.Config();

@@ -90,7 +90,7 @@ private:
     void UploadUniforms(bool accelerate_draw);
 
     /// Generic draw function for DrawTriangles and AccelerateDrawBatch
-    bool Draw(bool accelerate, bool is_indexed);
+    bool Draw(bool accelerate, bool is_indexed, const std::optional<DrawPlan>& plan = std::nullopt);
 
     /// Internal implementation for AccelerateDrawBatch
     bool AccelerateDrawBatchInternal(bool is_indexed);
@@ -128,6 +128,7 @@ private:
     std::array<vk::Buffer, 16> vertex_buffers;
     VertexArrayInfo vertex_info;
     PipelineInfo pipeline_info{};
+    std::optional<DrawPlan> cpu_vertex_path_plan;
 
     StreamBuffer stream_buffer;     ///< Vertex+Index buffer
     StreamBuffer uniform_buffer;    ///< Uniform buffer

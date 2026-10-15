@@ -90,6 +90,7 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
     // Define vertex layout for software shaders
     MakeSoftwareVertexLayout();
     pipeline_info.state.vertex_layout = software_layout;
+    pipeline_cache.PrewarmFallbacks(software_layout);
 
     const vk::Device device = instance.GetDevice();
     texture_lf_view = device.createBufferViewUnique({
@@ -480,7 +481,15 @@ bool RasterizerVulkan::AccelerateDrawBatch(bool is_indexed) {
 }
 
 bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
-    if (pipeline_cache.UsesCpuVertexPath()) {
+    const DrawPlan plan =
+        pipeline_cache.PlanDraw(pipeline_info, regs.pipeline.num_vertices, async_shaders);
+    if (plan.outcome == DrawOutcome::Skip) {
+        return true;
+    }
+    if (plan.outcome == DrawOutcome::CpuVertexPath) {
+        if (plan.pipeline) {
+            cpu_vertex_path_plan = DrawPlan{DrawOutcome::Fallback, plan.pipeline};
+        }
         return false;
     }
 
@@ -488,10 +497,7 @@ bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
         SetupIndexArray();
     }
 
-    const bool wait_built = !async_shaders || regs.pipeline.num_vertices <= 6;
-    if (!pipeline_cache.BindPipeline(pipeline_info, wait_built, regs.pipeline.num_vertices)) {
-        return true;
-    }
+    pipeline_cache.BindPipeline(pipeline_info, plan);
 
     const DrawParams params = {
         .vertex_count = regs.pipeline.num_vertices,
@@ -546,6 +552,7 @@ void RasterizerVulkan::SetupIndexArray() {
 }
 
 void RasterizerVulkan::DrawTriangles() {
+    const auto plan = std::exchange(cpu_vertex_path_plan, std::nullopt);
     if (vertex_batch.empty()) {
         return;
     }
@@ -556,10 +563,11 @@ void RasterizerVulkan::DrawTriangles() {
     pipeline_cache.UseTrivialVertexShader();
     pipeline_cache.UseTrivialGeometryShader();
 
-    Draw(false, false);
+    Draw(false, false, plan);
 }
 
-bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
+bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed,
+                            const std::optional<DrawPlan>& plan) {
     MICROPROFILE_SCOPE(Vulkan_Drawing);
     SyncDrawState();
 
@@ -633,9 +641,12 @@ bool RasterizerVulkan::Draw(bool accelerate, bool is_indexed) {
     if (accelerate) {
         succeeded = AccelerateDrawBatchInternal(is_indexed);
     } else {
-        pipeline_cache.BindPipeline(pipeline_info, true, static_cast<u32>(vertex_batch.size()));
-
         const u32 vertex_count = static_cast<u32>(vertex_batch.size());
+        pipeline_cache.BindPipeline(pipeline_info, plan ? *plan
+                                                        : pipeline_cache.PlanDraw(
+                                                              pipeline_info, vertex_count,
+                                                              async_shaders));
+
         const u32 vertex_size = vertex_count * sizeof(HardwareVertex);
         const auto [buffer, offset, _] = stream_buffer.Map(vertex_size, sizeof(HardwareVertex));
 

@@ -97,7 +97,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
       trivial_vertex_shader{
           instance, vk::ShaderStageFlagBits::eVertex,
           GLSL::GenerateTrivialVertexShader(instance.IsShaderClipDistanceSupported(), true)},
-      ubershader{instance, renderpass_cache, shader_workers, pipeline_workers} {
+      ubershader{instance, renderpass_cache, shader_workers, num_worker_threads} {
     scheduler.RegisterOnDispatch([this] { update_queue.Flush(); });
     profile = Pica::Shader::Profile{
         .enable_accurate_mul = false,
@@ -186,6 +186,7 @@ void PipelineCache::SwitchCache(u64 title_id, const std::atomic_bool& stop_loadi
     SaveDriverPipelineDiskCache();
     SetProgramID(title_id);
     LoadDriverPipelineDiskCache(stop_loading, nullptr);
+    ubershader.SwitchTitle(title_id);
 
     // Switch the disk shader cache after driver cache is switched
     SwitchDiskCache(title_id, stop_loading, callback);
@@ -405,29 +406,13 @@ void PipelineCache::SwitchDiskCache(u64 title_id, const std::atomic_bool& stop_l
     }
 }
 
-bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built, u32 vertices) {
+void PipelineCache::BindPipeline(const PipelineInfo& info, const DrawPlan& plan) {
     MICROPROFILE_SCOPE(Vulkan_Bind);
 
-    for (u32 i = 0; i < MAX_SHADER_STAGES; i++) {
-        info.state.shader_ids[i] = shader_hashes[i];
-    }
-
-    const bool hardware = current_shaders[ProgramType::VS] != &trivial_vertex_shader;
-    GraphicsPipeline* pipeline =
-        hardware ? nullptr : ubershader.Pipeline(info, &trivial_vertex_shader, *pipeline_layout);
-    if (!pipeline) {
-        pipeline = curr_disk_cache->GetPipeline(info);
-    }
+    GraphicsPipeline* const pipeline = plan.pipeline;
     const bool stats = PipelineStats::Enabled();
-    if (stats) {
-        PipelineStats::Request(instance, info, pipeline->IsDone(), hardware, vertices, stats_tex0,
-                               stats_tex0_on);
-    }
-    if (!pipeline->IsDone() && !pipeline->TryBuild(wait_built)) {
-        if (stats) {
-            PipelineStats::Skip(info.state.OptimizedHash(instance), hardware, vertices);
-        }
-        return false;
+    if (stats && plan.outcome == DrawOutcome::Fallback) {
+        PipelineStats::FallbackDraw();
     }
 
     const bool is_dirty = scheduler.IsStateDirty(StateFlags::Pipeline);
@@ -551,8 +536,6 @@ bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built, u32 vertic
     current_info = info;
     current_pipeline = pipeline;
     scheduler.MarkStateNonDirty(StateFlags::Pipeline | StateFlags::DescriptorSets);
-
-    return true;
 }
 
 ExtraVSConfig PipelineCache::CalcExtraConfig(const PicaVSConfig& config) {

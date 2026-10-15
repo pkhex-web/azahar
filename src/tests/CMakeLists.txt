@@ -23,7 +23,10 @@ add_executable(tests
 )
 
 if (ENABLE_VULKAN)
-    target_sources(tests PRIVATE video_core/vulkan_ubershader.cpp)
+    target_sources(tests PRIVATE
+        video_core/vulkan_ubershader.cpp
+        video_core/vulkan_ubershader_fallback.cpp
+    )
     target_link_libraries(tests PRIVATE vulkan-headers vma sirit)
 endif()
 

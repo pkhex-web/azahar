@@ -43,6 +43,19 @@ void FragmentShader(const Pica::Shader::FSConfig& config, u64 hash, u64 ns, bool
 
 void VertexShader(u64 config, u64 program, u64 ns);
 
+void Ubershader(u32 variant, u64 ns, u64 bytes);
+
+void FallbackPipeline(u64 pipeline, u32 variant, const char* source, u32 blend_enable, u32 blend,
+                      u32 write_mask, u32 color, u32 depth);
+
+void FallbackDraw();
+
+void Redirect();
+
+void FallbackMissing();
+
+void Ineligible();
+
 } // namespace PipelineStats
 
 } // namespace Vulkan
