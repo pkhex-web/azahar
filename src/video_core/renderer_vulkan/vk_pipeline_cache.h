@@ -10,6 +10,7 @@
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_shader_disk_cache.h"
+#include "video_core/renderer_vulkan/vk_ubershader.h"
 #include "video_core/shader/generator/pica_fs_config.h"
 #include "video_core/shader/generator/profile.h"
 #include "video_core/shader/generator/shader_gen.h"
@@ -85,8 +86,18 @@ public:
     /// Binds a passthrough geometry shader
     void UseTrivialGeometryShader();
 
-    /// Binds a fragment shader generated from PICA state
-    void UseFragmentShader(const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user);
+    /// Binds a fragment shader generated from PICA state. Returns true when the ubershader config
+    /// in the fragment uniform block changed.
+    bool UseFragmentShader(const Pica::RegsInternal& regs, const Pica::Shader::UserConfig& user);
+
+    /// Whether hardware draws of the current fragment shader go through the CPU vertex path.
+    [[nodiscard]] bool UsesCpuVertexPath() const noexcept {
+        return ubershader.UsesCpuVertexPath();
+    }
+
+    [[nodiscard]] const UberConfig& GetUberConfig() const noexcept {
+        return ubershader.Config();
+    }
 
     /// Queries which channels need min/max blend emulation in the fragment shader
     void QueryBlendEmulation(const Pica::RegsInternal& regs, bool& rgb_emulation,
@@ -167,6 +178,7 @@ private:
     std::array<Shader*, MAX_SHADER_STAGES> current_shaders;
 
     Shader trivial_vertex_shader;
+    Ubershader ubershader;
     u32 stats_tex0{};
     bool stats_tex0_on{};
 

@@ -96,7 +96,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
           DescriptorHeap{instance, scheduler.GetMasterSemaphore(), UTILITY_BINDINGS, 32}},
       trivial_vertex_shader{
           instance, vk::ShaderStageFlagBits::eVertex,
-          GLSL::GenerateTrivialVertexShader(instance.IsShaderClipDistanceSupported(), true)} {
+          GLSL::GenerateTrivialVertexShader(instance.IsShaderClipDistanceSupported(), true)},
+      ubershader{instance, renderpass_cache, shader_workers, pipeline_workers} {
     scheduler.RegisterOnDispatch([this] { update_queue.Flush(); });
     profile = Pica::Shader::Profile{
         .enable_accurate_mul = false,
@@ -411,9 +412,13 @@ bool PipelineCache::BindPipeline(PipelineInfo& info, bool wait_built, u32 vertic
         info.state.shader_ids[i] = shader_hashes[i];
     }
 
-    GraphicsPipeline* const pipeline = curr_disk_cache->GetPipeline(info);
-    const bool stats = PipelineStats::Enabled();
     const bool hardware = current_shaders[ProgramType::VS] != &trivial_vertex_shader;
+    GraphicsPipeline* pipeline =
+        hardware ? nullptr : ubershader.Pipeline(info, &trivial_vertex_shader, *pipeline_layout);
+    if (!pipeline) {
+        pipeline = curr_disk_cache->GetPipeline(info);
+    }
+    const bool stats = PipelineStats::Enabled();
     if (stats) {
         PipelineStats::Request(instance, info, pipeline->IsDone(), hardware, vertices, stats_tex0,
                                stats_tex0_on);
@@ -623,7 +628,7 @@ void PipelineCache::UseTrivialGeometryShader() {
     shader_hashes[ProgramType::GS] = 0;
 }
 
-void PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
+bool PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
                                       const Pica::Shader::UserConfig& user) {
 
     auto res = curr_disk_cache->UseFragmentShader(regs, user);
@@ -635,7 +640,9 @@ void PipelineCache::UseFragmentShader(const Pica::RegsInternal& regs,
     if (res.has_value()) {
         current_shaders[ProgramType::FS] = (*res).second;
         shader_hashes[ProgramType::FS] = (*res).first;
+        return ubershader.UseFragmentShader(regs, user, profile, (*res).first);
     }
+    return false;
 }
 
 void PipelineCache::QueryBlendEmulation(const Pica::RegsInternal& regs, bool& rgb_emulation,
