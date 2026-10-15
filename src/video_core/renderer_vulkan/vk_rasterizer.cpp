@@ -677,7 +677,7 @@ void RasterizerVulkan::SyncTextureUnits(const Framebuffer* framebuffer) {
 
         // If the texture unit is disabled bind a null surface to it
         if (!texture.enabled) {
-            switch (texture.config.type.Value()) {
+            switch (texture_index == 0 ? texture.config.type.Value() : TextureType::Texture2D) {
             case TextureType::TextureCube:
             case TextureType::ShadowCube: {
                 const Sampler& null_sampler = res_cache.GetSampler(VideoCore::NULL_SURFACE_CUBE_ID);
