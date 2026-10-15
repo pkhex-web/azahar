@@ -1133,8 +1133,11 @@ Id FragmentModule::ProcTexSampler() {
         const Id lod_i{OpConvertFToS(i32_id, lod)};
         const Id lod_f{OpFract(f32_id, lod)};
         const Id color1{SampleProcTexColor(lut_coord, lod_i)};
-        const Id color2{SampleProcTexColor(lut_coord, OpIAdd(i32_id, lod_i, ConstS32(1)))};
-        final_color = OpFMix(f32_id, color1, color2, lod_f);
+        // LOD 7 asks for level 8 with a weight of 0, past the end of the offsets table.
+        const Id next_lod{OpSMin(i32_id, OpIAdd(i32_id, lod_i, ConstS32(1)), ConstS32(7))};
+        const Id color2{SampleProcTexColor(lut_coord, next_lod)};
+        const Id weight{OpCompositeConstruct(vec_ids.Get(4), lod_f, lod_f, lod_f, lod_f)};
+        final_color = OpFMix(vec_ids.Get(4), color1, color2, weight);
         break;
     }
     }

@@ -1068,8 +1068,7 @@ void EnableProcTex(FSConfig& config, Random& random) {
     proctex.v_clamp.Assign(static_cast<TexturingRegs::ProcTexClamp>(random.Uint(0, 4)));
     proctex.color_combiner.Assign(static_cast<TexturingRegs::ProcTexCombiner>(random.Uint(0, 9)));
     proctex.alpha_combiner.Assign(static_cast<TexturingRegs::ProcTexCombiner>(random.Uint(0, 9)));
-    // The generator's mipmap-linear filters mix two colours into a float, which Metal rejects.
-    proctex.lut_filter.Assign(static_cast<TexturingRegs::ProcTexFilter>(random.Uint(0, 3)));
+    proctex.lut_filter.Assign(static_cast<TexturingRegs::ProcTexFilter>(random.Uint(0, 5)));
     proctex.separate_alpha.Assign(random.Bool());
     proctex.noise_enable.Assign(random.Bool());
     proctex.u_shift.Assign(static_cast<TexturingRegs::ProcTexShift>(random.Uint(0, 2)));
@@ -1340,7 +1339,7 @@ TEST_CASE("Ubershader matches the SPIR-V generator", "[video_core][vulkan][ubers
             FSConfig config = BaseConfig();
             Random random{600 + seed};
             EnableProcTex(config, random);
-            config.proctex.lut_filter.Assign(static_cast<TexturingRegs::ProcTexFilter>(seed % 4));
+            config.proctex.lut_filter.Assign(static_cast<TexturingRegs::ProcTexFilter>(seed % 6));
             comparison.Check(fmt::format("proctex {}", seed), config, 600 + seed);
         }
     }
