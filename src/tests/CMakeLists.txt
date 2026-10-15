@@ -22,6 +22,11 @@ add_executable(tests
     audio_core/merryhime_3ds_audio/audio_test_biquad_filter.cpp
 )
 
+if (ENABLE_VULKAN)
+    target_sources(tests PRIVATE video_core/vulkan_ubershader.cpp)
+    target_link_libraries(tests PRIVATE vulkan-headers vma sirit)
+endif()
+
 create_target_directory_groups(tests)
 
 if (BSD STREQUAL "NetBSD")
