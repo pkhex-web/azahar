@@ -6,7 +6,9 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 #include <dynarmic/interface/A32/a32.h>
+#include "common/code_memory.h"
 #include "common/common_types.h"
 #include "core/arm/arm_interface.h"
 #include "core/arm/dynarmic/arm_dynarmic_cp15.h"
@@ -78,6 +80,7 @@ private:
 
     Dynarmic::A32::Jit* jit = nullptr;
     std::shared_ptr<Memory::PageTable> current_page_table = nullptr;
+    std::vector<std::unique_ptr<Common::CodeMemory>> code_memory;
     std::map<std::shared_ptr<Memory::PageTable>, std::unique_ptr<Dynarmic::A32::Jit>> jits;
 };
 

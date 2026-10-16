@@ -125,8 +125,7 @@ bool SetSerializationQuirks(uint64_t quirks);
 void SetVFSCallback(struct retro_vfs_interface_info* vfs_iface_info);
 #endif
 
-#ifdef IOS
-bool CanUseJIT();
-#endif
+/// Asks the frontend for executable memory, which the JITs then use. Returns whether they can run.
+bool SetUpJIT();
 
 } // namespace LibRetro

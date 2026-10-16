@@ -16,6 +16,7 @@
 #include <nihstro/shader_bytecode.h>
 #include <oaknut/code_block.hpp>
 #include <oaknut/oaknut.hpp>
+#include "common/code_memory.h"
 #include "common/common_types.h"
 #include "video_core/pica/shader_setup.h"
 
@@ -40,8 +41,7 @@ public:
 
     void Run(const ShaderSetup& setup, ShaderUnit& state, u32 offset) const {
         program(&setup.uniforms, &state,
-                reinterpret_cast<const std::byte*>(code_mem->ptr()) +
-                    instruction_labels[offset].offset());
+                code_begin + instruction_labels[offset].offset());
     }
 
     void Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_code,
@@ -80,6 +80,8 @@ public:
 private:
     std::vector<u32> code_vec;
     std::unique_ptr<oaknut::CodeBlock> code_mem;
+    std::unique_ptr<Common::CodeMemory> frontend_code_mem;
+    std::byte* code_begin = nullptr;
 
     void Compile_Block(u32 end);
     void Compile_NextInstr();

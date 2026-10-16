@@ -19,6 +19,8 @@ add_library(citra_common STATIC EXCLUDE_FROM_ALL
     bounded_threadsafe_queue.h
     cityhash.cpp
     cityhash.h
+    code_memory.cpp
+    code_memory.h
     color.h
     common_funcs.h
     common_paths.h

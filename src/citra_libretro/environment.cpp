@@ -6,6 +6,7 @@
 
 #include "audio_core/audio_types.h"
 #include "audio_core/libretro_sink.h"
+#include "common/code_memory.h"
 #include "common/scm_rev.h"
 #include "core/3ds.h"
 #include "core_settings.h"
@@ -14,6 +15,28 @@
 
 #ifdef HAVE_LIBRETRO_VFS
 #include "streams/file_stream.h"
+#endif
+
+#ifndef RETRO_ENVIRONMENT_EXEC_MEM_ALLOC
+#define RETRO_ENVIRONMENT_EXEC_MEM_ALLOC 83
+#define RETRO_ENVIRONMENT_EXEC_MEM_FREE 84
+#define RETRO_EXEC_MEM_MODE_UNAVAILABLE 0
+#define RETRO_EXEC_MEM_MODE_UNRESTRICTED 1
+#define RETRO_EXEC_MEM_MODE_RWX 2
+#define RETRO_EXEC_MEM_MODE_WX_TOGGLE 3
+#define RETRO_EXEC_MEM_MODE_DUAL_MAP 4
+
+struct retro_exec_mem_alloc {
+    unsigned version;
+    size_t size;
+    unsigned mode;
+    void* rx;
+    void* rw;
+};
+
+struct retro_exec_mem_free {
+    void* rx;
+};
 #endif
 
 using namespace LibRetro;
@@ -227,12 +250,41 @@ void SetVFSCallback(struct retro_vfs_interface_info* vfs_iface_info) {
 }
 #endif
 
+static bool AllocateCodeMemory(std::size_t size, void** rx, void** rw) {
+    retro_exec_mem_alloc alloc{1, size, RETRO_EXEC_MEM_MODE_UNAVAILABLE, nullptr, nullptr};
+    if (!environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_ALLOC, &alloc) || !alloc.rx || !alloc.rw) {
+        return false;
+    }
+    *rx = alloc.rx;
+    *rw = alloc.rw;
+    return true;
+}
+
+static void FreeCodeMemory(void* rx) {
+    retro_exec_mem_free request{rx};
+    environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_FREE, &request);
+}
+
+static constexpr Common::CodeMemoryAllocator frontend_code_memory{AllocateCodeMemory,
+                                                                  FreeCodeMemory};
+
+bool SetUpJIT() {
+    retro_exec_mem_alloc probe{1, 0, RETRO_EXEC_MEM_MODE_UNAVAILABLE, nullptr, nullptr};
+    const bool answered = environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_ALLOC, &probe);
+    const bool from_frontend = answered && (probe.mode == RETRO_EXEC_MEM_MODE_RWX ||
+                                            probe.mode == RETRO_EXEC_MEM_MODE_WX_TOGGLE ||
+                                            probe.mode == RETRO_EXEC_MEM_MODE_DUAL_MAP);
+    Common::SetCodeMemoryAllocator(from_frontend ? &frontend_code_memory : nullptr);
+    if (answered) {
+        return from_frontend || probe.mode == RETRO_EXEC_MEM_MODE_UNRESTRICTED;
+    }
 #ifdef IOS
-bool CanUseJIT() {
     bool can_jit = false;
     return environ_cb(RETRO_ENVIRONMENT_GET_JIT_CAPABLE, &can_jit) && can_jit;
-}
+#else
+    return true;
 #endif
+}
 
 void OnConfigureEnvironment() {
 #ifdef HAVE_LIBRETRO_VFS

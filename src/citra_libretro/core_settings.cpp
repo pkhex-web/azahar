@@ -148,7 +148,6 @@ static constexpr retro_core_option_v2_category option_categories[] = {
 
 static constexpr retro_core_option_v2_definition option_definitions[] = {
     // CPU Category
-#ifndef IOS
     {
         config::cpu::use_cpu_jit,
         "Enable CPU JIT",
@@ -165,7 +164,6 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
         },
         config::enabled
     },
-#endif
     {
         config::cpu::use_fastinterp,
         "Use Fast Interpreter",
@@ -334,7 +332,6 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
         },
         config::enabled
     },
-#ifndef IOS
     {
         config::graphics::use_shader_jit,
         "Enable Shader JIT",
@@ -350,7 +347,6 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
         },
         config::enabled
     },
-#endif
     {
         config::graphics::shaders_accurate_mul,
         "Accurate Shader Multiplication",
@@ -879,11 +875,8 @@ void RegisterCoreOptions(void) {
 
 static void ParseCpuOptions(void) {
     Settings::values.use_cpu_jit =
-#ifdef IOS
-        false;
-#else
+        LibRetro::SetUpJIT() &&
         LibRetro::FetchVariable(config::cpu::use_cpu_jit, config::enabled) == config::enabled;
-#endif
 
     Settings::values.use_fastinterp =
         LibRetro::FetchVariable(config::cpu::use_fastinterp, config::enabled) == config::enabled;
@@ -1029,12 +1022,9 @@ static void ParseGraphicsOptions(void) {
                                                              config::enabled) == config::enabled;
 
     Settings::values.use_shader_jit =
-#ifdef IOS
-        false;
-#else
+        LibRetro::SetUpJIT() &&
         LibRetro::FetchVariable(config::graphics::use_shader_jit, config::enabled) ==
-        config::enabled;
-#endif
+            config::enabled;
 
     Settings::values.shaders_accurate_mul =
         LibRetro::FetchVariable(config::graphics::shaders_accurate_mul, config::enabled) ==

@@ -1040,18 +1040,24 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     // Copy to executable memory
     const size_t code_size = code_vec.size() * sizeof(u32);
 
-    code_mem = std::make_unique<oaknut::CodeBlock>(code_size);
-    code_mem->unprotect();
+    if (Common::HasCodeMemoryAllocator()) {
+        frontend_code_mem = std::make_unique<Common::CodeMemory>(code_size);
+        frontend_code_mem->BeginWrite();
+        std::memcpy(frontend_code_mem->Writable(), code_vec.data(), code_size);
+        frontend_code_mem->EndWrite();
+        code_begin = static_cast<std::byte*>(frontend_code_mem->Executable());
+    } else {
+        code_mem = std::make_unique<oaknut::CodeBlock>(code_size);
+        code_mem->unprotect();
+        std::memcpy(code_mem->ptr(), code_vec.data(), code_size);
 
-    program = reinterpret_cast<CompiledShader*>(reinterpret_cast<std::byte*>(code_mem->ptr()) +
-                                                program_offset);
+        // Memory is ready to execute
+        code_mem->protect();
+        code_mem->invalidate_all();
+        code_begin = reinterpret_cast<std::byte*>(code_mem->ptr());
+    }
 
-    // Copy to executable memory
-    std::memcpy(code_mem->ptr(), code_vec.data(), code_vec.size() * sizeof(u32));
-
-    // Memory is ready to execute
-    code_mem->protect();
-    code_mem->invalidate_all();
+    program = reinterpret_cast<CompiledShader*>(code_begin + program_offset);
 
     // code_vec is no longer needed
     code_vec.clear();

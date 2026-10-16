@@ -370,6 +370,15 @@ std::unique_ptr<Dynarmic::A32::Jit> ARM_Dynarmic::MakeJit() {
     config.processor_id = GetID();
     config.global_monitor = &exclusive_monitor.monitor;
 
+    if (Common::HasCodeMemoryAllocator()) {
+        // Frontend memory is finite, and each core keeps a JIT for every page table it has run.
+        config.code_cache_size = 32 * 1024 * 1024;
+        const auto& memory =
+            code_memory.emplace_back(std::make_unique<Common::CodeMemory>(config.code_cache_size));
+        config.code_cache_rw = memory->Writable();
+        config.code_cache_rx = memory->Executable();
+    }
+
     return std::make_unique<Dynarmic::A32::Jit>(config);
 }
 
