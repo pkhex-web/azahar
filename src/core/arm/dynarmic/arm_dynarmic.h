@@ -6,7 +6,6 @@
 
 #include <map>
 #include <memory>
-#include <vector>
 #include <dynarmic/interface/A32/a32.h>
 #include "common/code_memory.h"
 #include "common/common_types.h"
@@ -72,7 +71,12 @@ private:
     Core::System& system;
     Memory::MemorySystem& memory;
     std::unique_ptr<DynarmicUserCallbacks> cb;
-    std::unique_ptr<Dynarmic::A32::Jit> MakeJit();
+
+    struct PageTableJit {
+        std::unique_ptr<Common::CodeMemory> code_memory;
+        std::unique_ptr<Dynarmic::A32::Jit> jit;
+    };
+    PageTableJit MakeJit();
 
     u32 fpexc = 0;
     CP15State cp15_state;
@@ -80,8 +84,7 @@ private:
 
     Dynarmic::A32::Jit* jit = nullptr;
     std::shared_ptr<Memory::PageTable> current_page_table = nullptr;
-    std::vector<std::unique_ptr<Common::CodeMemory>> code_memory;
-    std::map<std::shared_ptr<Memory::PageTable>, std::unique_ptr<Dynarmic::A32::Jit>> jits;
+    std::map<std::weak_ptr<Memory::PageTable>, PageTableJit, std::owner_less<>> jits;
 };
 
 } // namespace Core

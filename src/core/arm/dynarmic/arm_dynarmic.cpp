@@ -4,9 +4,11 @@
 
 #include <csignal>
 #include <cstring>
+#include <new>
 #include <dynarmic/interface/A32/a32.h>
 #include <dynarmic/interface/optimization_flags.h>
 #include "common/assert.h"
+#include "common/literals.h"
 #include "common/microprofile.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_cp15.h"
@@ -30,6 +32,24 @@ constexpr u32 SIGTRAP = 5;
 #endif
 
 namespace Core {
+
+namespace {
+
+// Dynarmic empties a full cache and starts over, so a smaller one only costs speed.
+std::unique_ptr<Common::CodeMemory> MakeCodeCache() {
+    using namespace Common::Literals;
+    for (std::size_t size = 32_MiB;; size /= 2) {
+        try {
+            return std::make_unique<Common::CodeMemory>(size);
+        } catch (const std::bad_alloc&) {
+            if (size == 4_MiB) {
+                throw;
+            }
+        }
+    }
+}
+
+} // Anonymous namespace
 
 class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
 public:
@@ -315,7 +335,7 @@ void ARM_Dynarmic::PrepareReschedule() {
 
 void ARM_Dynarmic::ClearInstructionCache() {
     for (const auto& j : jits) {
-        j.second->ClearCache();
+        j.second.jit->ClearCache();
     }
 }
 
@@ -340,13 +360,25 @@ void ARM_Dynarmic::SetPageTable(const std::shared_ptr<Memory::PageTable>& page_t
 
     auto iter = jits.find(current_page_table);
     if (iter != jits.end()) {
-        jit = iter->second.get();
+        jit = iter->second.jit.get();
         LoadContext(ctx);
         return;
     }
 
+    // An expired page table belonged to a process that has exited, or is the null one each core
+    // starts on, so its code memory goes to the new JIT.
+    std::erase_if(jits, [this](const auto& entry) {
+        if (!entry.first.expired()) {
+            return false;
+        }
+        if (entry.second.jit.get() == jit) {
+            jit = nullptr;
+        }
+        return true;
+    });
+
     auto new_jit = MakeJit();
-    jit = new_jit.get();
+    jit = new_jit.jit.get();
     LoadContext(ctx);
     jits.emplace(current_page_table, std::move(new_jit));
 }
@@ -357,7 +389,7 @@ void ARM_Dynarmic::ServeBreak([[maybe_unused]] int signal) {
 #endif
 }
 
-std::unique_ptr<Dynarmic::A32::Jit> ARM_Dynarmic::MakeJit() {
+ARM_Dynarmic::PageTableJit ARM_Dynarmic::MakeJit() {
     Dynarmic::A32::UserConfig config;
     config.callbacks = cb.get();
     if (current_page_table) {
@@ -370,16 +402,17 @@ std::unique_ptr<Dynarmic::A32::Jit> ARM_Dynarmic::MakeJit() {
     config.processor_id = GetID();
     config.global_monitor = &exclusive_monitor.monitor;
 
+    PageTableJit made;
     if (Common::HasCodeMemoryAllocator()) {
-        // Frontend memory is finite, and each core keeps a JIT for every page table it has run.
-        config.code_cache_size = 32 * 1024 * 1024;
-        const auto& memory =
-            code_memory.emplace_back(std::make_unique<Common::CodeMemory>(config.code_cache_size));
-        config.code_cache_rw = memory->Writable();
-        config.code_cache_rx = memory->Executable();
+        // Frontend memory is finite, and each core keeps a JIT for every page table it runs.
+        made.code_memory = MakeCodeCache();
+        config.code_cache_size = made.code_memory->Size();
+        config.code_cache_rw = made.code_memory->Writable();
+        config.code_cache_rx = made.code_memory->Executable();
     }
 
-    return std::make_unique<Dynarmic::A32::Jit>(config);
+    made.jit = std::make_unique<Dynarmic::A32::Jit>(config);
+    return made;
 }
 
 } // namespace Core

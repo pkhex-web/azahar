@@ -41,6 +41,10 @@ public:
         return rw;
     }
 
+    std::size_t Size() const {
+        return size;
+    }
+
     void BeginWrite();
 
     /// Makes the code written since BeginWrite ready to run.
