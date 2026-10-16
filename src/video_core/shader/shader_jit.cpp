@@ -5,8 +5,10 @@
 #include "common/arch.h"
 #if CITRA_ARCH(x86_64) || CITRA_ARCH(arm64)
 
+#include <new>
 #include "common/assert.h"
 #include "common/hash.h"
+#include "common/logging/log.h"
 #include "common/microprofile.h"
 #include "video_core/shader/shader.h"
 #include "video_core/shader/shader_jit.h"
@@ -36,7 +38,13 @@ void JitEngine::SetupBatch(ShaderSetup& setup, u32 entry_point) {
         setup.cached_shader = iter->second.get();
     } else {
         auto shader = std::make_unique<JitShader>();
-        shader->Compile(&setup.GetProgramCode(), &setup.GetSwizzleData());
+        try {
+            shader->Compile(&setup.GetProgramCode(), &setup.GetSwizzleData());
+        } catch (const std::bad_alloc&) {
+            // A null entry runs this shader on the interpreter.
+            LOG_WARNING(HW_GPU, "No code memory for shader {:016X}, interpreting it", cache_key);
+            shader.reset();
+        }
         setup.cached_shader = shader.get();
         cache.emplace_hint(iter, cache_key, std::move(shader));
     }
@@ -45,7 +53,10 @@ void JitEngine::SetupBatch(ShaderSetup& setup, u32 entry_point) {
 MICROPROFILE_DECLARE(GPU_Shader);
 
 void JitEngine::Run(const ShaderSetup& setup, ShaderUnit& state) const {
-    ASSERT(setup.cached_shader != nullptr);
+    if (setup.cached_shader == nullptr) {
+        interpreter.Run(setup, state);
+        return;
+    }
 
     MICROPROFILE_SCOPE(GPU_Shader);
 

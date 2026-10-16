@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include "common/common_types.h"
 #include "video_core/shader/shader.h"
+#include "video_core/shader/shader_interpreter.h"
 
 namespace Pica::Shader {
 
@@ -26,6 +27,7 @@ public:
 
 private:
     std::unordered_map<u64, std::unique_ptr<JitShader>> cache;
+    InterpreterEngine interpreter;
 };
 
 } // namespace Pica::Shader
