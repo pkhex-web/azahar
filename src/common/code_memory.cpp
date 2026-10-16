@@ -12,6 +12,9 @@
 #else
 #include <sys/mman.h>
 #endif
+#ifdef __APPLE__
+#include <libkern/OSCacheControl.h>
+#endif
 
 namespace Common {
 
@@ -61,6 +64,8 @@ void CodeMemory::EndWrite() {
     }
 #ifdef _WIN32
     FlushInstructionCache(GetCurrentProcess(), rx, size);
+#elif defined(__APPLE__)
+    sys_icache_invalidate(rx, size);
 #else
     __builtin___clear_cache(static_cast<char*>(rx), static_cast<char*>(rx) + size);
 #endif
