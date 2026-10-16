@@ -3,6 +3,7 @@
 // Refer to the misc/licenses/gplv2.txt file included.
 
 #include <list>
+#include <new>
 #include <numeric>
 #include <vector>
 #include <math.h>
@@ -66,6 +67,24 @@ public:
 };
 
 CitraLibRetro* emu_instance;
+
+/// The CPU JIT throws std::bad_alloc when the frontend has no code memory left for even its
+/// smallest cache. The kernel is then halfway through a process switch, so the game can't go on.
+static void StopOutOfCodeMemory() {
+    LOG_CRITICAL(Frontend, "The CPU JIT ran out of code memory, stopping the game");
+    emu_instance->game_loaded = false;
+    LibRetro::DisplayMessage("Out of JIT memory. The game has stopped.");
+    LibRetro::Shutdown();
+}
+
+static Core::System::ResultStatus RunLoopOrStop() {
+    try {
+        return Core::System::GetInstance().RunLoop();
+    } catch (const std::bad_alloc&) {
+        StopOutOfCodeMemory();
+        return Core::System::ResultStatus::ErrorUnknown;
+    }
+}
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
@@ -285,7 +304,10 @@ void retro_run() {
     }
 
     while (!emu_instance->emu_window->HasSubmittedFrame()) {
-        auto result = Core::System::GetInstance().RunLoop();
+        auto result = RunLoopOrStop();
+        if (!emu_instance->game_loaded) {
+            return;
+        }
 
         if (result != Core::System::ResultStatus::Success) {
             std::string errorContent = Core::System::GetInstance().GetStatusDetails();
@@ -369,8 +391,16 @@ static void setup_memory_maps() {
 }
 
 static bool do_load_game() {
-    const Core::System::ResultStatus load_result{
-        Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path)};
+    Core::System::ResultStatus load_result;
+    try {
+        load_result = Core::System::GetInstance().Load(*emu_instance->emu_window,
+                                                       LibRetro::settings.file_path);
+    } catch (const std::bad_alloc&) {
+        // A failed load never powers the system on, so retro_deinit wouldn't shut it down.
+        Core::System::GetInstance().Shutdown();
+        StopOutOfCodeMemory();
+        return false;
+    }
 
     switch (load_result) {
     case Core::System::ResultStatus::Success:
@@ -676,7 +706,7 @@ static bool DrainAsyncOperations(Core::System& system) {
             emu_instance->emu_window->suppressPresentation = false;
             return false;
         }
-        auto result = system.RunLoop();
+        auto result = RunLoopOrStop();
         if (result != Core::System::ResultStatus::Success) {
             emu_instance->emu_window->suppressPresentation = false;
             return false;
@@ -691,7 +721,7 @@ std::optional<std::vector<u8>> savestate = {};
 
 size_t retro_serialize_size() {
     auto& system = Core::System::GetInstance();
-    if (!system.IsPoweredOn())
+    if (!system.IsPoweredOn() || !emu_instance->game_loaded)
         return 0;
 
     if (!DrainAsyncOperations(system)) {
@@ -721,7 +751,7 @@ bool retro_serialize(void* data, size_t size) {
 
 bool retro_unserialize(const void* data, size_t size) {
     auto& system = Core::System::GetInstance();
-    if (!system.IsPoweredOn())
+    if (!system.IsPoweredOn() || !emu_instance->game_loaded)
         return false;
 
     if (!DrainAsyncOperations(system)) {
@@ -731,6 +761,9 @@ bool retro_unserialize(const void* data, size_t size) {
     std::vector<u8> buffer(static_cast<const u8*>(data), static_cast<const u8*>(data) + size);
     try {
         return system.LoadStateBuffer(std::move(buffer));
+    } catch (const std::bad_alloc&) {
+        StopOutOfCodeMemory();
+        return false;
     } catch (const std::exception& e) {
         LOG_ERROR(Frontend, "Error loading state: {}", e.what());
         return false;
